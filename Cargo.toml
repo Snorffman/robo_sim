@@ -1,0 +1,13 @@
+[package]
+name = "robo_sim4"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+piston_window = "0.127.0" # 0.124.0
+piston = "0.53.2"
+
+image = "0.24.5"
+#InputBot = "*"
