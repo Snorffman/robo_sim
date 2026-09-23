@@ -10,4 +10,6 @@ piston_window = "0.127.0" # 0.124.0
 piston = "0.53.2"
 
 image = "0.24.5"
+regex = "1.12.4"
+bml_ml = "0.2.0"
 #InputBot = "*"

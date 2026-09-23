@@ -1,5 +1,10 @@
 
-use crate::{Triangle, Vec3D , Mat4x4};
+use std::vec;
+
+use piston_window::color;
+// use robo_sim4::Tex2D;
+
+use crate::{Mat4x4, Triangle, Vec3D, lib::{Tex2D, lerp, vec_lerp}};
 
 ////! Includes normals, lights,  
 
@@ -77,3 +82,165 @@ pub fn mat_quick_inverse(m : &Mat4x4) -> Mat4x4 {
 
 
 // pub fn matrix_quick_inverse(&mut self)  {
+
+
+
+//*------------------- Clipping -------------------- */
+/// Finds the intersection between a vector and a plane
+/// plane_p: a point that lies on the plane
+/// 
+/// plane_n: The normal vector of the plane
+/// 
+/// vec_a: the starting position of the vector
+/// 
+/// vec_b: the direction vector of the vector
+///! Could be an error here, since I used my own method & idk if he treats p as a different thing.
+pub fn vec_intersect_plane(plane_p: &Vec3D, plane_n: &Vec3D, vec_a: &Vec3D, vec_b: &Vec3D) -> Option<(Vec3D, f64)> {
+    let b_dot_n = vec_b.dot(&plane_n);
+
+
+    if b_dot_n == 0.0 {
+        return None
+    }else {
+        let  t = plane_p.sub_vec(&vec_a).dot(&plane_n) / b_dot_n;
+        return Some( (vec_a.add_vec( &vec_b.mult_scalar(t)  ), t) )
+    }
+}
+
+
+
+// pub fn vec_intersect_plane_old(plane_p: &Vec3D, plane_n: &Vec3D, vec_a: &Vec3D, vec_b: &Vec3D) -> Option<Vec3D> {
+//     println!("vec_b = ({:.3},{:.3},{:.3})", vec_b.x, vec_b.y, vec_b.z);
+//     println!("vec_a = ({:.3},{:.3},{:.3})", vec_a.x, vec_a.y, vec_a.z);
+//     println!("plane_p= ({:.3},{:.3},{:.3})", plane_p.x, plane_p.y, plane_p.z);
+//     println!("plane_n= ({:.3},{:.3}, {:.3})\n", plane_n.x, plane_n.y, plane_n.z);
+    
+//     let b_dot_p = vec_b.dot(&plane_p);
+
+//     if b_dot_p == 0.0 {
+//         return None
+//     }else {
+//         let  t = plane_p.sub_vec(&vec_a).dot(&plane_n) / b_dot_p;
+//         println!("t={}", t);
+//         return Some(vec_a.add_vec( &vec_b.mult_scalar(t)  ) )
+//     }
+// }
+
+
+
+
+// pub fn vec_intersect_plane(plane_p: &Vec3D, plane_n: &Vec3D, vec_a: &Vec3D, vec_b: &Vec3D) -> Option<Vec3D> {
+//     let plane_n = plane_n.normalized();
+//     let plane_d = - plane_n.dot(plane_p);
+//     let ad = vec_a.dot(&plane_n);
+//     let bd = 
+
+// }
+
+
+
+
+
+/// Clips the given input triangle against the plane, and changes the output triangles accordingly that should be drawn
+/// Inputs:
+/// plane_p: a point that lies on the plane
+/// 
+/// plane_n: The normal vector of the plane
+/// 
+/// in_tri: input triangle
+/// 
+/// Outputs:
+/// out_tri1, out_tri2, out_tri3: output triangles (viea mutability)
+/// num_out_tri : the number of output triangles
+
+pub fn triangle_clip_plane(plane_p: &Vec3D, plane_n: &Vec3D, in_tri: &Triangle, color_it: bool)  -> Vec<Triangle> {
+
+    // Normalize plane normal
+    let plane_n = plane_n.normalized(); // improves efficiency since now we can assume magnitude is 1.
+
+    // Distance of a given point to the plane
+    let dist = |p: &Vec3D| -> f64 {
+        ( p.sub_vec(plane_p) ).dot(&plane_n)
+    };
+
+    // If distance is positive, point lies on "inside" of plane
+    let zero3_vec = Vec3D::zero(); let zero2_vec = Tex2D::zero();
+    let mut inside_points:  [(&Vec3D, &Tex2D);3] = [(&zero3_vec,&zero2_vec); 3]; let mut inside_point_count: usize = 0;
+    let mut outside_points:  [(&Vec3D, &Tex2D);3]  = [(&zero3_vec,&zero2_vec); 3];  let mut outside_point_count: usize = 0;
+
+    // Find distances
+    let d0: f64 = dist(&in_tri.p[0]);
+    let d1: f64 = dist(&in_tri.p[1]);
+    let d2: f64 = dist(&in_tri.p[2]);
+    let distances = [d0, d1, d2];
+
+    // Classify inside and outside points
+    for i in 0..distances.len() {
+        let distance = distances[i];
+        if distance >= 0.0 {
+            inside_points[inside_point_count] = (&in_tri.p[i], &in_tri.tex[i]);
+            inside_point_count += 1;
+        }else {
+            outside_points[outside_point_count] = (&in_tri.p[i], &in_tri.tex[i]);
+            outside_point_count += 1;
+        }
+    }
+    // println!("inside={:?}\noutside={:?}", inside_points, outside_points);
+    // println!("inside={}, out={}\n\n", inside_point_count, outside_point_count);
+
+    // Construct triangles & go through the cases
+    if inside_point_count == 0 {
+        return vec![]; // no returned triangles are valid
+    }
+    else if inside_point_count == 3 {
+        // All points lie on the inside of the plane, so let the triangle pass through
+        let out_tri1 = in_tri.clone();
+
+        return vec![out_tri1];
+    }
+    else if inside_point_count == 1 && outside_point_count == 2 {
+        let mut out_tri1 = Triangle::zero();
+        // Copy appearence info into new triangle
+        out_tri1.col = if color_it {[0,0,255,255]} else {in_tri.col}; // in_tri.col; // 
+
+        // The inside point is valid, so keep that
+        out_tri1.p[0] = *inside_points[0].0;    out_tri1.tex[0] = *inside_points[0].1;
+
+        // The two new points are at the locations where the original sides of the triangle (lines) intersect with the plane
+        //println!("{:?} {:?}", plane_n, inside_points);
+        let (i1, t1) = vec_intersect_plane(plane_p, &plane_n, inside_points[0].0, &outside_points[0].0.sub_vec(&inside_points[0].0)).unwrap(); 
+        out_tri1.p[1] = i1;     out_tri1.tex[1] = Tex2D::vec_lerp(inside_points[0].1, outside_points[0].1, t1);
+
+        let (i2, t2) = vec_intersect_plane(plane_p, &plane_n, inside_points[0].0, &outside_points[1].0.sub_vec(&inside_points[0].0)).unwrap();
+        out_tri1.p[2]  = i2;    out_tri1.tex[2] = Tex2D::vec_lerp(inside_points[0].1, outside_points[1].1, t2);
+
+        return vec![out_tri1]; // return the newly formed triangle
+    } 
+    else if inside_point_count == 2 && outside_point_count == 1 {
+        let mut out_tri1:Triangle = Triangle::zero(); let mut out_tri2:Triangle = Triangle::zero();
+        // Return 2 smaller triangles
+        out_tri1.col = if color_it {[0, 255, 0, 255]} else {in_tri.col}; //in_tri.col; 
+        out_tri2.col = if color_it {[255, 0, 0, 255]} else {in_tri.col}; //in_tri.col;
+
+        // The first triangle consists of the 2 inside points and a point where one side of the triangle intersects w/ the plane
+        out_tri1.p[0] = *inside_points[0].0;   out_tri1.tex[0] = *inside_points[0].1;
+        out_tri1.p[1] = *inside_points[1].0;   out_tri1.tex[1] = *inside_points[1].1;
+        let (i1, t1) = vec_intersect_plane(plane_p, &plane_n, inside_points[0].0, &outside_points[0].0.sub_vec(&inside_points[0].0)).unwrap();
+        out_tri1.p[2] = i1;                   out_tri1.tex[2] = Tex2D::vec_lerp(inside_points[0].1, outside_points[0].1, t1);
+
+        // The second triangle consists of 1 inside points, the newly created point, and the intersection of the OTHER side of the triangle and the plane
+        out_tri2.p[0] = *inside_points[1].0;  out_tri2.tex[0] = *inside_points[1].1;
+        out_tri2.p[1] = out_tri1.p[2];        out_tri2.tex[1] = out_tri1.tex[2];
+        let (i2, t2) = vec_intersect_plane(plane_p, &plane_n, inside_points[1].0, &outside_points[0].0.sub_vec(&inside_points[1].0)).unwrap();
+        out_tri2.p[2] = i2;                   out_tri2.tex[2] = Tex2D::vec_lerp(inside_points[1].1 , outside_points[0].1, t2);
+
+        return vec![out_tri1, out_tri2]; // return 2 newly formed triangles which form a quad
+    }
+
+
+
+
+
+    vec![]
+
+}
